@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { TeamLogo } from "@/components/TeamLogo";
 
 export const dynamic = "force-dynamic";
 import {
@@ -185,11 +186,15 @@ npm run db:seed`}
                   key={g.id}
                   className="px-4 py-2 flex items-center justify-between text-sm"
                 >
-                  <div>
-                    <span className="font-mono">
-                      {g.awayTeam.abbreviation} @ {g.homeTeam.abbreviation}
+                  <div className="flex items-center gap-2">
+                    <TeamLogo abbreviation={g.awayTeam.abbreviation} size={22} />
+                    <span className="font-mono">{g.awayTeam.abbreviation}</span>
+                    <span className="text-gray-500">@</span>
+                    <TeamLogo abbreviation={g.homeTeam.abbreviation} size={22} />
+                    <span className="font-mono">{g.homeTeam.abbreviation}</span>
+                    <span className="ml-3 text-gray-400 text-xs uppercase tracking-wider">
+                      {g.stage}
                     </span>
-                    <span className="ml-3 text-gray-400">{g.stage}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-mono">

@@ -148,6 +148,51 @@ async function createPlayoffUserGame(seasonId: number): Promise<number> {
 }
 
 /**
+ * Manually adjust a previously-entered score on an active (not yet finalized)
+ * game. Used for score corrections during play. Recomputes the game totals.
+ */
+export async function adjustInningScore(
+  gameId: number,
+  inningNumber: number,
+  field: "top" | "bottom",
+  runs: number
+) {
+  if (runs < 0 || runs > 30 || !Number.isInteger(runs)) {
+    throw new Error("Ungültiger Wert für Runs.");
+  }
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    include: { innings: true },
+  });
+  if (!game) throw new Error("Spiel nicht gefunden.");
+  if (game.isComplete) throw new Error("Spiel ist bereits abgeschlossen.");
+
+  const inning = game.innings.find((i) => i.inningNumber === inningNumber);
+  if (!inning) throw new Error("Inning existiert noch nicht.");
+
+  if (field === "top") {
+    await prisma.inning.update({
+      where: { id: inning.id },
+      data: { topScore: runs },
+    });
+  } else {
+    // Only allow editing bottom score if it was already rolled (not null)
+    if (inning.bottomScore === null) {
+      throw new Error(
+        "Bottom Half wurde noch nicht gewürfelt und kann nicht editiert werden."
+      );
+    }
+    await prisma.inning.update({
+      where: { id: inning.id },
+      data: { bottomScore: runs },
+    });
+  }
+
+  await recalcGameTotals(gameId);
+  revalidatePath(`/game/${gameId}`);
+}
+
+/**
  * Submit the top half of an inning (opponent runs).
  */
 export async function submitTopHalf(gameId: number, inningNumber: number, runs: number) {

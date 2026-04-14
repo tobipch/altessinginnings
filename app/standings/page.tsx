@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getStandings, groupByDivision } from "@/lib/standings";
 import { MARINERS_ABBREVIATION } from "@/lib/mlb-teams";
+import { TeamLogo } from "@/components/TeamLogo";
 
 export const dynamic = "force-dynamic";
 
@@ -74,10 +75,13 @@ function DivisionCard({
                 className={highlight ? "bg-mariners-navy/60" : ""}
               >
                 <td className="px-2 py-1">
-                  <span className="font-mono text-xs text-gray-400 mr-2">
-                    {t.abbreviation}
+                  <span className="inline-flex items-center gap-2">
+                    <TeamLogo abbreviation={t.abbreviation} size={22} />
+                    <span className="font-mono text-xs text-gray-400">
+                      {t.abbreviation}
+                    </span>
+                    <span>{t.city} {t.name}</span>
                   </span>
-                  {t.city} {t.name}
                 </td>
                 <td className="text-center px-1">{t.wins}</td>
                 <td className="text-center px-1">{t.losses}</td>

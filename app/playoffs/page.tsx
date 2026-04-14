@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { PLAYOFF_WINS_NEEDED } from "@/lib/mlb-teams";
+import { TeamLogo } from "@/components/TeamLogo";
 
 export const dynamic = "force-dynamic";
 
@@ -52,24 +53,26 @@ export default async function PlayoffsPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span
-                          className={
+                          className={`inline-flex items-center gap-2 ${
                             s.winnerId === s.teamAId
                               ? "font-bold text-teal-300"
                               : ""
-                          }
+                          }`}
                         >
+                          <TeamLogo abbreviation={s.teamA.abbreviation} size={24} />
                           {s.teamA.city} {s.teamA.name}
                         </span>
                         <span className="font-mono">{s.teamAWins}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span
-                          className={
+                          className={`inline-flex items-center gap-2 ${
                             s.winnerId === s.teamBId
                               ? "font-bold text-teal-300"
                               : ""
-                          }
+                          }`}
                         >
+                          <TeamLogo abbreviation={s.teamB.abbreviation} size={24} />
                           {s.teamB.city} {s.teamB.name}
                         </span>
                         <span className="font-mono">{s.teamBWins}</span>

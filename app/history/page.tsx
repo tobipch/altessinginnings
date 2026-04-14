@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { MARINERS_ABBREVIATION } from "@/lib/mlb-teams";
+import { TeamLogo } from "@/components/TeamLogo";
 
 export const dynamic = "force-dynamic";
 
@@ -59,8 +60,9 @@ export default async function HistoryPage() {
                     <span className="text-xs text-gray-400 mr-2">
                       {g.stage === "regular" ? `Spiel ${g.roundNumber}` : stageLabel(g.stage)}
                     </span>
-                    <span className="font-semibold">
-                      vs {opponent.city} {opponent.name}
+                    <span className="font-semibold inline-flex items-center gap-2">
+                      vs <TeamLogo abbreviation={opponent.abbreviation} size={22} />
+                      {opponent.city} {opponent.name}
                     </span>
                   </div>
                   <div className="font-mono">

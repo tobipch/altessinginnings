@@ -3,10 +3,12 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 import {
+  adjustInningScore,
   finishUserGame,
   rollBottomHalfAction,
   submitTopHalf,
 } from "@/lib/actions";
+import { TeamLogo } from "@/components/TeamLogo";
 import {
   ALTESSING_ROLL,
   ALTESSING_START_INNING,
@@ -35,6 +37,15 @@ async function finishGame(formData: FormData) {
   const gameId = Number(formData.get("gameId"));
   await finishUserGame(gameId);
   redirect("/");
+}
+
+async function adjustScore(formData: FormData) {
+  "use server";
+  const gameId = Number(formData.get("gameId"));
+  const inning = Number(formData.get("inning"));
+  const field = String(formData.get("field")) as "top" | "bottom";
+  const runs = Number(formData.get("runs"));
+  await adjustInningScore(gameId, inning, field, runs);
 }
 
 export default async function GamePage({
@@ -103,9 +114,16 @@ export default async function GamePage({
   return (
     <div className="space-y-6">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold">
-          {game.awayTeam.city} {game.awayTeam.name} @ {game.homeTeam.city}{" "}
-          {game.homeTeam.name}
+        <h1 className="text-xl font-bold flex items-center gap-2 flex-wrap">
+          <TeamLogo abbreviation={game.awayTeam.abbreviation} size={32} />
+          <span>
+            {game.awayTeam.city} {game.awayTeam.name}
+          </span>
+          <span className="text-gray-500 mx-1">@</span>
+          <TeamLogo abbreviation={game.homeTeam.abbreviation} size={32} />
+          <span>
+            {game.homeTeam.city} {game.homeTeam.name}
+          </span>
         </h1>
         <span className="text-sm text-teal-300 uppercase tracking-wide">
           {game.stage === "regular"
@@ -131,16 +149,128 @@ export default async function GamePage({
           Spiel beendet. Final: <b>{opponentRunning}</b> – <b>{userRunning}</b>
         </div>
       ) : (
-        <ControlPanel
-          game={game}
-          state={state}
-          currentInning={currentInning}
-          altessingPreview={altessingPreview}
-          opponentRunning={opponentRunning}
-          userRunning={userRunning}
-        />
+        <>
+          <ControlPanel
+            game={game}
+            state={state}
+            currentInning={currentInning}
+            altessingPreview={altessingPreview}
+            opponentRunning={opponentRunning}
+            userRunning={userRunning}
+          />
+          {innings.length > 0 && (
+            <EditPanel
+              gameId={game.id}
+              innings={innings}
+              awayAbbr={game.awayTeam.abbreviation}
+              homeAbbr={game.homeTeam.abbreviation}
+            />
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function EditPanel(props: {
+  gameId: number;
+  innings: Array<{
+    inningNumber: number;
+    topScore: number;
+    bottomScore: number | null;
+  }>;
+  awayAbbr: string;
+  homeAbbr: string;
+}) {
+  const { gameId, innings, awayAbbr, homeAbbr } = props;
+  return (
+    <details className="border border-gray-800 rounded-lg bg-gray-900/30">
+      <summary className="px-4 py-3 cursor-pointer text-sm text-gray-300 hover:text-teal-300 select-none">
+        Scores anpassen (Korrekturen)
+      </summary>
+      <div className="px-4 pb-4 pt-1 space-y-2">
+        <p className="text-xs text-gray-500">
+          Alle bisher eingegebenen Werte können hier korrigiert werden. Das
+          Bottom-Half kann nur editiert werden nachdem es gewürfelt wurde.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-gray-400">
+              <tr>
+                <th className="text-left px-2 py-1">Inning</th>
+                <th className="text-left px-2 py-1">Top ({awayAbbr})</th>
+                <th className="text-left px-2 py-1">Bottom ({homeAbbr})</th>
+              </tr>
+            </thead>
+            <tbody>
+              {innings.map((i) => (
+                <tr key={i.inningNumber} className="border-t border-gray-800">
+                  <td className="px-2 py-2 font-mono">{i.inningNumber}</td>
+                  <td className="px-2 py-2">
+                    <form
+                      action={adjustScore}
+                      className="flex items-center gap-2"
+                    >
+                      <input type="hidden" name="gameId" value={gameId} />
+                      <input type="hidden" name="inning" value={i.inningNumber} />
+                      <input type="hidden" name="field" value="top" />
+                      <input
+                        type="number"
+                        name="runs"
+                        defaultValue={i.topScore}
+                        min={0}
+                        max={30}
+                        className="w-16 bg-black/60 border border-gray-700 rounded px-2 py-1 font-mono text-sm focus:border-teal-400 outline-none"
+                      />
+                      <button
+                        type="submit"
+                        className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
+                      >
+                        Speichern
+                      </button>
+                    </form>
+                  </td>
+                  <td className="px-2 py-2">
+                    {i.bottomScore === null ? (
+                      <span className="text-xs text-gray-500 italic">
+                        noch nicht gewürfelt
+                      </span>
+                    ) : (
+                      <form
+                        action={adjustScore}
+                        className="flex items-center gap-2"
+                      >
+                        <input type="hidden" name="gameId" value={gameId} />
+                        <input
+                          type="hidden"
+                          name="inning"
+                          value={i.inningNumber}
+                        />
+                        <input type="hidden" name="field" value="bottom" />
+                        <input
+                          type="number"
+                          name="runs"
+                          defaultValue={i.bottomScore}
+                          min={0}
+                          max={30}
+                          className="w-16 bg-black/60 border border-gray-700 rounded px-2 py-1 font-mono text-sm focus:border-teal-400 outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
+                        >
+                          Speichern
+                        </button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -208,7 +338,12 @@ function Linescore(props: {
         </thead>
         <tbody>
           <tr>
-            <td className="font-semibold">{awayAbbr}</td>
+            <td className="font-semibold">
+              <span className="inline-flex items-center gap-2">
+                <TeamLogo abbreviation={awayAbbr} size={22} />
+                {awayAbbr}
+              </span>
+            </td>
             {cols.map((n) => {
               const inn = byInn.get(n);
               const isCurrent = n === currentInning;
@@ -224,7 +359,12 @@ function Linescore(props: {
             <td className="font-mono">{opponentRunning}</td>
           </tr>
           <tr>
-            <td className="font-semibold">{homeAbbr}</td>
+            <td className="font-semibold">
+              <span className="inline-flex items-center gap-2">
+                <TeamLogo abbreviation={homeAbbr} size={22} />
+                {homeAbbr}
+              </span>
+            </td>
             {cols.map((n) => {
               const inn = byInn.get(n);
               const isCurrent = n === currentInning;
