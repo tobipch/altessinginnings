@@ -46,25 +46,25 @@ App läuft auf http://localhost:3000.
 
 ## Deployment auf Vercel
 
-1. Repo zu GitHub pushen (passiert automatisch beim Fertigstellen).
+1. Repo zu GitHub pushen.
 2. Auf vercel.com das Repo importieren.
 3. Im Vercel-Dashboard **Storage → Create Database → Neon Postgres** (oder
-   Vercel Postgres) hinzufügen. Vercel hängt dann automatisch die Env-Vars
-   (`DATABASE_URL`) an das Projekt.
-4. In "Settings → Environment Variables" sicherstellen, dass `DATABASE_URL`
-   gesetzt ist.
-5. Deploy starten. Beim ersten Deploy in der Vercel-CLI oder via `vercel env
-   pull` lokal verbinden und einmalig ausführen:
+   Vercel Postgres) hinzufügen. Vercel hängt die Env-Var `DATABASE_URL`
+   automatisch ans Projekt.
+4. **Deploy** auslösen. Das Build-Script macht automatisch `prisma db push`
+   — das Schema wird beim ersten Deploy in der DB angelegt.
+5. Nach dem ersten erfolgreichen Deploy: die 30 MLB-Teams einmalig laden,
+   indem du im Browser folgende URL aufrufst:
 
-   ```bash
-   npx prisma db push
-   npm run db:seed
+   ```
+   https://<dein-vercel-deployment>.vercel.app/api/seed
    ```
 
-   Alternativ per Vercel "Post-deploy script" oder einmalig via Neon-SQL-Editor.
+   Die Route antwortet mit `{"ok":true,"created":30,"total":30}`. Sie ist
+   idempotent — wiederholtes Aufrufen überschreibt nichts.
+6. Fertig — gehe auf die Startseite und klicke **Neue Saison starten**.
 
-Danach ist die App unter deiner Vercel-URL erreichbar und alle Daten werden
-persistent in Postgres gespeichert.
+Alle Daten werden ab jetzt persistent in Postgres gespeichert.
 
 ## Struktur
 
