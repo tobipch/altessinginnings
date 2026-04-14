@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id           Int     @id @default(autoincrement())
+  abbreviation String  @unique
+  name         String
+  city         String
+  league       String // "AL" or "NL"
+  division     String // "East", "Central", "West"
+
+  homeGames        Game[]            @relation("HomeTeam")
+  awayGames        Game[]            @relation("AwayTeam")
+  seasonStats      TeamSeasonStats[]
+  playoffSeriesA   PlayoffSeries[]   @relation("PlayoffTeamA")
+  playoffSeriesB   PlayoffSeries[]   @relation("PlayoffTeamB")
+}
+
+model Season {
+  id           Int       @id @default(autoincrement())
+  year         Int
+  status       String    @default("regular") // regular | playoffs | complete
+  currentRound Int       @default(1)
+  createdAt    DateTime  @default(now())
+
+  games        Game[]
+  stats        TeamSeasonStats[]
+  series       PlayoffSeries[]
+}
+
+model TeamSeasonStats {
+  id       Int @id @default(autoincrement())
+  seasonId Int
+  teamId   Int
+  wins     Int @default(0)
+  losses   Int @default(0)
+  runsFor      Int @default(0)
+  runsAgainst  Int @default(0)
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([seasonId, teamId])
+}
+
+model Game {
+  id              Int      @id @default(autoincrement())
+  seasonId        Int
+  roundNumber     Int      // game-day / round index in season
+  stage           String   // regular | wildcard | divisional | championship | worldseries
+  seriesId        Int?     // if playoff game
+  homeTeamId      Int
+  awayTeamId      Int
+  homeScore       Int      @default(0)
+  awayScore       Int      @default(0)
+  isUserGame      Boolean  @default(false)
+  isComplete      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  season    Season          @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  homeTeam  Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam  Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  series    PlayoffSeries?  @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  innings   Inning[]
+}
+
+model Inning {
+  id           Int @id @default(autoincrement())
+  gameId       Int
+  inningNumber Int
+  topScore     Int  @default(0) // opponent (away) runs in top half
+  bottomScore  Int? // user (home) runs in bottom half; null = not rolled yet
+  isAltessing  Boolean @default(false)
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, inningNumber])
+}
+
+model PlayoffSeries {
+  id         Int     @id @default(autoincrement())
+  seasonId   Int
+  round      String  // wildcard | divisional | championship | worldseries
+  league     String? // AL | NL | null (worldseries)
+  teamAId    Int
+  teamBId    Int
+  teamAWins  Int     @default(0)
+  teamBWins  Int     @default(0)
+  winnerId   Int?
+  isComplete Boolean @default(false)
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teamA  Team   @relation("PlayoffTeamA", fields: [teamAId], references: [id])
+  teamB  Team   @relation("PlayoffTeamB", fields: [teamBId], references: [id])
+  games  Game[]
+}

@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  min-height: 100%;
+  background: #050914;
+  color: #e6edf3;
+}
+
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.scoreboard {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.scoreboard th, .scoreboard td {
+  padding: 0.4rem 0.6rem;
+  text-align: center;
+  border-right: 1px solid #1f2937;
+  border-bottom: 1px solid #1f2937;
+  min-width: 2.25rem;
+}
+.scoreboard th:first-child,
+.scoreboard td:first-child {
+  text-align: left;
+  min-width: 7rem;
+}
+.scoreboard th:last-child,
+.scoreboard td:last-child {
+  border-right: none;
+  font-weight: 700;
+}
+.altessing {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(239, 68, 68, 0.25));
+}
+.current-inning {
+  background: rgba(12, 44, 86, 0.55);
+}
