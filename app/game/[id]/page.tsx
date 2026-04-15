@@ -9,6 +9,7 @@ import {
   submitTopHalf,
 } from "@/lib/actions";
 import { TeamLogo } from "@/components/TeamLogo";
+import { SubmitButton } from "@/components/SubmitButton";
 import {
   ALTESSING_ROLL,
   ALTESSING_START_INNING,
@@ -222,12 +223,12 @@ function EditPanel(props: {
                         max={30}
                         className="w-16 bg-black/60 border border-gray-700 rounded px-2 py-1 font-mono text-sm focus:border-teal-400 outline-none"
                       />
-                      <button
-                        type="submit"
+                      <SubmitButton
                         className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
+                        pendingText="..."
                       >
                         Speichern
-                      </button>
+                      </SubmitButton>
                     </form>
                   </td>
                   <td className="px-2 py-2">
@@ -255,12 +256,12 @@ function EditPanel(props: {
                           max={30}
                           className="w-16 bg-black/60 border border-gray-700 rounded px-2 py-1 font-mono text-sm focus:border-teal-400 outline-none"
                         />
-                        <button
-                          type="submit"
+                        <SubmitButton
                           className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"
+                          pendingText="..."
                         >
                           Speichern
-                        </button>
+                        </SubmitButton>
                       </form>
                     )}
                   </td>
@@ -466,12 +467,12 @@ function ControlPanel(props: {
               className="w-full bg-black/60 border border-gray-700 rounded-md px-3 py-2 text-lg font-mono focus:border-teal-400 outline-none"
             />
           </label>
-          <button
-            type="submit"
+          <SubmitButton
             className="bg-teal-500 hover:bg-teal-400 text-black font-semibold px-5 py-2 rounded-md"
+            pendingText="Speichere..."
           >
             Top bestätigen
-          </button>
+          </SubmitButton>
         </form>
       )}
 
@@ -496,28 +497,28 @@ function ControlPanel(props: {
               Pool: {NORMAL_ROLL.join(", ")}
             </div>
           )}
-          <button
-            type="submit"
+          <SubmitButton
             className={`${
               altessingPreview
                 ? "bg-amber-400 hover:bg-amber-300"
                 : "bg-teal-500 hover:bg-teal-400"
             } text-black font-semibold px-5 py-2 rounded-md`}
+            pendingText="Würfle..."
           >
             Würfeln
-          </button>
+          </SubmitButton>
         </form>
       )}
 
       {state === "done" && (
         <form action={finishGame} className="flex flex-wrap gap-3">
           <input type="hidden" name="gameId" value={game.id} />
-          <button
-            type="submit"
+          <SubmitButton
             className="bg-teal-500 hover:bg-teal-400 text-black font-semibold px-5 py-2 rounded-md"
+            pendingText="Schliesse Spiel ab & simuliere Liga..."
           >
             Spiel abschliessen &amp; Saison fortsetzen →
-          </button>
+          </SubmitButton>
         </form>
       )}
     </div>

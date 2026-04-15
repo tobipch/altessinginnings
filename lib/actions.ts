@@ -250,24 +250,31 @@ export async function rollBottomHalfAction(gameId: number, inningNumber: number)
   const altessing = isAltessingBottomHalf(inningNumber, opponent, user);
   const rolled = rollBottomHalf(altessing);
 
-  await prisma.inning.update({
-    where: { id: inning.id },
-    data: { bottomScore: rolled, isAltessing: altessing },
-  });
+  // New running totals after this roll
+  const newAway = opponent;
+  const newHome = user + rolled;
 
-  await recalcGameTotals(gameId);
+  // Batch the inning update + game totals update into one transaction
+  await prisma.$transaction([
+    prisma.inning.update({
+      where: { id: inning.id },
+      data: { bottomScore: rolled, isAltessing: altessing },
+    }),
+    prisma.game.update({
+      where: { id: gameId },
+      data: { homeScore: newHome, awayScore: newAway },
+    }),
+  ]);
+
   revalidatePath(`/game/${gameId}`);
   return { rolled, altessing };
 }
 
 async function recalcGameTotals(gameId: number) {
-  const game = await prisma.game.findUnique({
-    where: { id: gameId },
-    include: { innings: true },
-  });
-  if (!game) return;
-  const homeScore = game.innings.reduce((s, i) => s + (i.bottomScore ?? 0), 0);
-  const awayScore = game.innings.reduce((s, i) => s + i.topScore, 0);
+  // Used after manual score adjustments. Recomputes from the innings table.
+  const innings = await prisma.inning.findMany({ where: { gameId } });
+  const homeScore = innings.reduce((s, i) => s + (i.bottomScore ?? 0), 0);
+  const awayScore = innings.reduce((s, i) => s + i.topScore, 0);
   await prisma.game.update({
     where: { id: gameId },
     data: { homeScore, awayScore },
@@ -315,79 +322,138 @@ async function finalizeRegularRound(
   roundNumber: number,
   userGame: { homeTeamId: number; awayTeamId: number; homeScore: number; awayScore: number }
 ) {
-  // Record stats for user game
-  await applyGameResultToStats(seasonId, userGame);
-
-  // Simulate the other 14 games: all non-Mariners teams paired into matchups.
   const mariners = await getMariners();
   const others = await prisma.team.findMany({
     where: { id: { not: mariners.id } },
   });
-  // Exclude the Mariners' opponent so they don't double-up
   const opponentId =
     userGame.homeTeamId === mariners.id ? userGame.awayTeamId : userGame.homeTeamId;
   const pool = others.filter((t) => t.id !== opponentId);
   const pairs = randomPairings(pool);
 
+  // Pre-compute all CPU games and aggregate per-team stat deltas in memory.
+  type GameRow = {
+    seasonId: number;
+    roundNumber: number;
+    stage: string;
+    homeTeamId: number;
+    awayTeamId: number;
+    homeScore: number;
+    awayScore: number;
+    isUserGame: boolean;
+    isComplete: boolean;
+    completedAt: Date;
+  };
+  const cpuGames: GameRow[] = [];
+  const allResults: Array<{
+    homeTeamId: number;
+    awayTeamId: number;
+    homeScore: number;
+    awayScore: number;
+  }> = [userGame];
+  const now = new Date();
   for (const [a, b] of pairs) {
     const { home, away } = simulateCpuGame();
-    await prisma.game.create({
-      data: {
-        seasonId,
-        roundNumber,
-        stage: "regular",
-        homeTeamId: a.id,
-        awayTeamId: b.id,
-        homeScore: home,
-        awayScore: away,
-        isUserGame: false,
-        isComplete: true,
-        completedAt: new Date(),
-      },
+    cpuGames.push({
+      seasonId,
+      roundNumber,
+      stage: "regular",
+      homeTeamId: a.id,
+      awayTeamId: b.id,
+      homeScore: home,
+      awayScore: away,
+      isUserGame: false,
+      isComplete: true,
+      completedAt: now,
     });
-    await applyGameResultToStats(seasonId, {
+    allResults.push({
       homeTeamId: a.id,
       awayTeamId: b.id,
       homeScore: home,
       awayScore: away,
     });
   }
+  const statDeltas = aggregateStatDeltas(allResults);
 
-  // Advance season
+  // Single batched transaction:
+  //  - createMany for 14 CPU games (1 round trip)
+  //  - one update per affected team (sent as single batch)
+  //  - season currentRound bump
   const nextRound = roundNumber + 1;
-  if (nextRound > REGULAR_SEASON_GAMES) {
+  const advanceToPlayoffs = nextRound > REGULAR_SEASON_GAMES;
+
+  await prisma.$transaction([
+    prisma.game.createMany({ data: cpuGames }),
+    ...statDeltas.map((d) =>
+      prisma.teamSeasonStats.update({
+        where: { seasonId_teamId: { seasonId, teamId: d.teamId } },
+        data: {
+          wins: { increment: d.wins },
+          losses: { increment: d.losses },
+          runsFor: { increment: d.runsFor },
+          runsAgainst: { increment: d.runsAgainst },
+        },
+      })
+    ),
+    ...(advanceToPlayoffs
+      ? []
+      : [
+          prisma.season.update({
+            where: { id: seasonId },
+            data: { currentRound: nextRound },
+          }),
+        ]),
+  ]);
+
+  if (advanceToPlayoffs) {
     await startPlayoffs(seasonId);
-  } else {
-    await prisma.season.update({
-      where: { id: seasonId },
-      data: { currentRound: nextRound },
-    });
   }
 }
 
-async function applyGameResultToStats(
-  seasonId: number,
-  g: { homeTeamId: number; awayTeamId: number; homeScore: number; awayScore: number }
-) {
-  const homeWins = g.homeScore > g.awayScore;
-  await prisma.teamSeasonStats.update({
-    where: { seasonId_teamId: { seasonId, teamId: g.homeTeamId } },
-    data: {
-      wins: { increment: homeWins ? 1 : 0 },
-      losses: { increment: homeWins ? 0 : 1 },
-      runsFor: { increment: g.homeScore },
-      runsAgainst: { increment: g.awayScore },
-    },
-  });
-  await prisma.teamSeasonStats.update({
-    where: { seasonId_teamId: { seasonId, teamId: g.awayTeamId } },
-    data: {
-      wins: { increment: homeWins ? 0 : 1 },
-      losses: { increment: homeWins ? 1 : 0 },
-      runsFor: { increment: g.awayScore },
-      runsAgainst: { increment: g.homeScore },
-    },
-  });
+/**
+ * Aggregate per-team W/L/RF/RA increments for a batch of game results.
+ * Reduces the number of individual UPDATE statements we send to Postgres.
+ */
+function aggregateStatDeltas(
+  results: Array<{
+    homeTeamId: number;
+    awayTeamId: number;
+    homeScore: number;
+    awayScore: number;
+  }>
+): Array<{
+  teamId: number;
+  wins: number;
+  losses: number;
+  runsFor: number;
+  runsAgainst: number;
+}> {
+  const map = new Map<
+    number,
+    { wins: number; losses: number; runsFor: number; runsAgainst: number }
+  >();
+  const get = (id: number) => {
+    let row = map.get(id);
+    if (!row) {
+      row = { wins: 0, losses: 0, runsFor: 0, runsAgainst: 0 };
+      map.set(id, row);
+    }
+    return row;
+  };
+  for (const r of results) {
+    const homeWins = r.homeScore > r.awayScore;
+    const home = get(r.homeTeamId);
+    const away = get(r.awayTeamId);
+    home.wins += homeWins ? 1 : 0;
+    home.losses += homeWins ? 0 : 1;
+    home.runsFor += r.homeScore;
+    home.runsAgainst += r.awayScore;
+    away.wins += homeWins ? 0 : 1;
+    away.losses += homeWins ? 1 : 0;
+    away.runsFor += r.awayScore;
+    away.runsAgainst += r.homeScore;
+  }
+  return Array.from(map.entries()).map(([teamId, v]) => ({ teamId, ...v }));
 }
 
 /**
@@ -703,4 +769,131 @@ export async function simulateRestOfPlayoffs(seasonId: number) {
 export async function goToCurrentGame(seasonId: number) {
   const gameId = await ensureCurrentUserGame(seasonId);
   redirect(`/game/${gameId}`);
+}
+
+/**
+ * Wipe the current season completely (games, innings, stats, playoff bracket)
+ * and start a fresh one.
+ */
+export async function resetSeason(seasonId: number) {
+  // Cascading deletes on Season → Games → Innings, Stats, Series.
+  await prisma.season.delete({ where: { id: seasonId } }).catch(() => {});
+  await createSeason();
+  revalidatePath("/");
+  revalidatePath("/standings");
+  revalidatePath("/history");
+  revalidatePath("/results");
+  revalidatePath("/playoffs");
+}
+
+/**
+ * Test helper: simulate the entire remaining regular season at once and
+ * jump straight into the playoffs. Mariners' remaining games are auto-played
+ * with random scores so the standings stay consistent.
+ */
+export async function skipToPlayoffs(seasonId: number) {
+  const season = await prisma.season.findUnique({ where: { id: seasonId } });
+  if (!season) throw new Error("Season not found.");
+  if (season.status !== "regular") {
+    // Already past regular season — nothing to skip
+    revalidatePath("/");
+    return;
+  }
+
+  const mariners = await getMariners();
+  const allTeams = await prisma.team.findMany();
+  const teamsExceptMariners = allTeams.filter((t) => t.id !== mariners.id);
+
+  // Drop any in-progress user game so the user doesn't end up with an orphan.
+  await prisma.game.deleteMany({
+    where: { seasonId, isUserGame: true, isComplete: false },
+  });
+
+  // For every remaining round, simulate all 15 matchups (Mariners included).
+  for (let round = season.currentRound; round <= REGULAR_SEASON_GAMES; round++) {
+    // Mariners game vs random opponent
+    const opponent = pickRandom(teamsExceptMariners);
+    const userGameSim = simulateCpuGame();
+    const remainingPool = teamsExceptMariners.filter((t) => t.id !== opponent.id);
+    const pairs = randomPairings(remainingPool);
+
+    type GameRow = {
+      seasonId: number;
+      roundNumber: number;
+      stage: string;
+      homeTeamId: number;
+      awayTeamId: number;
+      homeScore: number;
+      awayScore: number;
+      isUserGame: boolean;
+      isComplete: boolean;
+      completedAt: Date;
+    };
+    const now = new Date();
+    const allGames: GameRow[] = [
+      {
+        seasonId,
+        roundNumber: round,
+        stage: "regular",
+        homeTeamId: mariners.id,
+        awayTeamId: opponent.id,
+        homeScore: userGameSim.home,
+        awayScore: userGameSim.away,
+        isUserGame: false, // recorded as auto-sim, no inning detail
+        isComplete: true,
+        completedAt: now,
+      },
+    ];
+    const allResults = [
+      {
+        homeTeamId: mariners.id,
+        awayTeamId: opponent.id,
+        homeScore: userGameSim.home,
+        awayScore: userGameSim.away,
+      },
+    ];
+    for (const [a, b] of pairs) {
+      const { home, away } = simulateCpuGame();
+      allGames.push({
+        seasonId,
+        roundNumber: round,
+        stage: "regular",
+        homeTeamId: a.id,
+        awayTeamId: b.id,
+        homeScore: home,
+        awayScore: away,
+        isUserGame: false,
+        isComplete: true,
+        completedAt: now,
+      });
+      allResults.push({
+        homeTeamId: a.id,
+        awayTeamId: b.id,
+        homeScore: home,
+        awayScore: away,
+      });
+    }
+    const deltas = aggregateStatDeltas(allResults);
+    await prisma.$transaction([
+      prisma.game.createMany({ data: allGames }),
+      ...deltas.map((d) =>
+        prisma.teamSeasonStats.update({
+          where: { seasonId_teamId: { seasonId, teamId: d.teamId } },
+          data: {
+            wins: { increment: d.wins },
+            losses: { increment: d.losses },
+            runsFor: { increment: d.runsFor },
+            runsAgainst: { increment: d.runsAgainst },
+          },
+        })
+      ),
+    ]);
+  }
+
+  await startPlayoffs(seasonId);
+
+  revalidatePath("/");
+  revalidatePath("/standings");
+  revalidatePath("/results");
+  revalidatePath("/playoffs");
 }

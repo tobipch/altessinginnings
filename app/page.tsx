@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { TeamLogo } from "@/components/TeamLogo";
+import { SubmitButton } from "@/components/SubmitButton";
+import { ConfirmForm } from "@/components/ConfirmForm";
 
 export const dynamic = "force-dynamic";
 import {
   createSeason,
   ensureCurrentUserGame,
+  resetSeason,
   simulateRestOfPlayoffs,
+  skipToPlayoffs,
 } from "@/lib/actions";
 import { redirect } from "next/navigation";
 import { REGULAR_SEASON_GAMES, MARINERS_ABBREVIATION } from "@/lib/mlb-teams";
@@ -28,6 +32,20 @@ async function simulateRest(formData: FormData) {
   "use server";
   const seasonId = Number(formData.get("seasonId"));
   await simulateRestOfPlayoffs(seasonId);
+  redirect("/");
+}
+
+async function resetSeasonAction(formData: FormData) {
+  "use server";
+  const seasonId = Number(formData.get("seasonId"));
+  await resetSeason(seasonId);
+  redirect("/");
+}
+
+async function skipToPlayoffsAction(formData: FormData) {
+  "use server";
+  const seasonId = Number(formData.get("seasonId"));
+  await skipToPlayoffs(seasonId);
   redirect("/");
 }
 
@@ -76,12 +94,12 @@ npm run db:seed`}
             und spiele dich zum World-Series-Titel.
           </p>
           <form action={newSeason}>
-            <button
-              type="submit"
+            <SubmitButton
               className="bg-teal-500 hover:bg-teal-400 text-black font-semibold px-5 py-2 rounded-md"
+              pendingText="Wird erstellt..."
             >
               Neue Saison starten
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </div>
@@ -124,39 +142,39 @@ npm run db:seed`}
           {season.status !== "complete" && !marinersEliminated && (
             <form action={playCurrentGame}>
               <input type="hidden" name="seasonId" value={season.id} />
-              <button
-                type="submit"
+              <SubmitButton
                 className="bg-teal-500 hover:bg-teal-400 text-black font-semibold px-5 py-2 rounded-md"
+                pendingText="Lädt Spiel..."
               >
                 {currentUserGame
                   ? "Aktuelles Spiel fortsetzen →"
                   : season.status === "regular"
                   ? `Spiel ${season.currentRound} starten →`
                   : "Nächstes Playoff-Spiel →"}
-              </button>
+              </SubmitButton>
             </form>
           )}
 
           {season.status === "playoffs" && marinersEliminated && (
             <form action={simulateRest}>
               <input type="hidden" name="seasonId" value={season.id} />
-              <button
-                type="submit"
+              <SubmitButton
                 className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-md"
+                pendingText="Simuliere..."
               >
                 Restliche Playoffs simulieren
-              </button>
+              </SubmitButton>
             </form>
           )}
 
           {season.status === "complete" && (
             <form action={newSeason}>
-              <button
-                type="submit"
+              <SubmitButton
                 className="bg-teal-500 hover:bg-teal-400 text-black font-semibold px-5 py-2 rounded-md"
+                pendingText="Wird erstellt..."
               >
                 Nächste Saison starten
-              </button>
+              </SubmitButton>
             </form>
           )}
 
@@ -174,6 +192,43 @@ npm run db:seed`}
           </Link>
         </div>
       </div>
+
+      <details className="border border-gray-800 rounded-lg bg-gray-900/30">
+        <summary className="px-4 py-3 cursor-pointer text-sm text-gray-400 hover:text-amber-300 select-none">
+          ⚙️ Saison-Tools (Reset / Test)
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-3">
+          <p className="text-xs text-gray-500">
+            Hilfsfunktionen zum Testen. Aktionen sind sofort und nicht rückgängig
+            zu machen.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {season.status === "regular" && (
+              <form action={skipToPlayoffsAction}>
+                <input type="hidden" name="seasonId" value={season.id} />
+                <SubmitButton
+                  className="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 px-4 py-2 rounded-md text-sm"
+                  pendingText="Simuliere Regular Season..."
+                >
+                  ⏭️ Regular Season skippen → direkt in die Playoffs
+                </SubmitButton>
+              </form>
+            )}
+            <ConfirmForm
+              action={resetSeasonAction}
+              message="Wirklich die aktuelle Saison komplett zurücksetzen? Alle Spiele und Standings gehen verloren."
+            >
+              <input type="hidden" name="seasonId" value={season.id} />
+              <SubmitButton
+                className="bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 px-4 py-2 rounded-md text-sm"
+                pendingText="Setze zurück..."
+              >
+                ↺ Saison komplett zurücksetzen
+              </SubmitButton>
+            </ConfirmForm>
+          </div>
+        </div>
+      </details>
 
       {season.games.length > 0 && (
         <div>
