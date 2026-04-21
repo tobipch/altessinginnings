@@ -14,6 +14,7 @@ import {
 } from "@/lib/actions";
 import { redirect } from "next/navigation";
 import { REGULAR_SEASON_GAMES, MARINERS_ABBREVIATION } from "@/lib/mlb-teams";
+import { calcStreakAndLastTen } from "@/lib/standings";
 
 async function playCurrentGame(formData: FormData) {
   "use server";
@@ -112,6 +113,14 @@ npm run db:seed`}
       })
     : null;
 
+  const completedUserGames = await prisma.game.findMany({
+    where: { seasonId: season.id, isUserGame: true, isComplete: true },
+    orderBy: { id: "asc" },
+    select: { homeScore: true, awayScore: true },
+  });
+  const { streak, lastTenWins, lastTenLosses } =
+    calcStreakAndLastTen(completedUserGames);
+
   const marinersEliminated = await isMarinersEliminated(season.id);
   const currentUserGame = await prisma.game.findFirst({
     where: { seasonId: season.id, isUserGame: true, isComplete: false },
@@ -131,11 +140,32 @@ npm run db:seed`}
           </span>
         </div>
         {marinersStats && (
-          <p className="text-sm text-gray-300 mt-1">
-            Mariners Bilanz: <b>{marinersStats.wins}</b>–<b>{marinersStats.losses}</b>
-            {marinersStats.wins + marinersStats.losses > 0 &&
-              ` (${(marinersStats.wins / (marinersStats.wins + marinersStats.losses)).toFixed(3).replace(/^0/, "")})`}
-          </p>
+          <div className="text-sm text-gray-300 mt-1 space-y-0.5">
+            <p>
+              Mariners Bilanz: <b>{marinersStats.wins}</b>–<b>{marinersStats.losses}</b>
+              {marinersStats.wins + marinersStats.losses > 0 &&
+                ` (${(marinersStats.wins / (marinersStats.wins + marinersStats.losses)).toFixed(3).replace(/^0/, "")})`}
+            </p>
+            {completedUserGames.length > 0 && (
+              <p className="text-xs text-gray-400">
+                <span
+                  className={
+                    streak.startsWith("W")
+                      ? "text-teal-400 font-semibold"
+                      : "text-rose-400 font-semibold"
+                  }
+                >
+                  {streak}
+                </span>
+                {completedUserGames.length >= 2 && (
+                  <span className="ml-3">
+                    Letzte {Math.min(completedUserGames.length, 10)}:{" "}
+                    <b>{lastTenWins}</b>–<b>{lastTenLosses}</b>
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
         )}
 
         <div className="mt-5 flex gap-3 flex-wrap">

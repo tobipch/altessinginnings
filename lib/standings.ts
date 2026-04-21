@@ -77,6 +77,39 @@ export function groupByDivision(
 }
 
 /**
+ * Compute current win/loss streak and last-10 record from a list of
+ * completed user games (sorted by id ASC, i.e. oldest first).
+ * Mariners are always the home team.
+ */
+export function calcStreakAndLastTen(
+  games: Array<{ homeScore: number; awayScore: number }>
+): { streak: string; lastTenWins: number; lastTenLosses: number } {
+  if (games.length === 0) {
+    return { streak: "—", lastTenWins: 0, lastTenLosses: 0 };
+  }
+
+  // Work from most recent to oldest
+  const reversed = [...games].reverse();
+
+  // Streak: count consecutive same result from most recent
+  const firstWin = reversed[0].homeScore > reversed[0].awayScore;
+  let streakCount = 0;
+  for (const g of reversed) {
+    const won = g.homeScore > g.awayScore;
+    if (won === firstWin) streakCount++;
+    else break;
+  }
+  const streak = `${firstWin ? "W" : "L"}${streakCount}`;
+
+  // Last 10
+  const lastTen = reversed.slice(0, 10);
+  const lastTenWins = lastTen.filter((g) => g.homeScore > g.awayScore).length;
+  const lastTenLosses = lastTen.length - lastTenWins;
+
+  return { streak, lastTenWins, lastTenLosses };
+}
+
+/**
  * Return the top N teams per league by record (used for playoff seeding).
  */
 export function topTeamsPerLeague(

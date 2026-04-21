@@ -21,12 +21,14 @@ export default function RootLayout({
               <span className="text-mariners-silver">Altessing</span>
               <span className="text-teal-300">-Innings</span>
             </Link>
-            <nav className="flex gap-4 text-sm flex-wrap">
+            <nav className="flex gap-3 text-sm flex-wrap">
               <Link href="/" className="hover:text-teal-300">Dashboard</Link>
               <Link href="/standings" className="hover:text-teal-300">Standings</Link>
               <Link href="/results" className="hover:text-teal-300">Resultate</Link>
               <Link href="/history" className="hover:text-teal-300">History</Link>
               <Link href="/playoffs" className="hover:text-teal-300">Playoffs</Link>
+              <Link href="/records" className="hover:text-teal-300">Records</Link>
+              <Link href="/head-to-head" className="hover:text-teal-300">H2H</Link>
             </nav>
           </div>
         </header>
