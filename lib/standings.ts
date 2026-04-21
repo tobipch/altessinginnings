@@ -120,3 +120,34 @@ export function topTeamsPerLeague(
   const nl = rows.filter((r) => r.league === "NL").slice(0, n);
   return { AL: al, NL: nl };
 }
+
+/**
+ * Get top 2 from each division, seeded by overall record within the league.
+ * Returns 6 teams per league: 3 division winners + 3 runners-up, sorted by
+ * overall record. Division winners are seeded 1-3, runners-up are seeded 4-6.
+ */
+export function playoffTeamsPerLeague(
+  rows: StandingRow[]
+): Record<"AL" | "NL", StandingRow[]> {
+  const result: Record<"AL" | "NL", StandingRow[]> = { AL: [], NL: [] };
+
+  for (const league of ["AL", "NL"] as const) {
+    const divWinners: StandingRow[] = [];
+    const divRunners: StandingRow[] = [];
+
+    for (const div of ["East", "Central", "West"]) {
+      const divTeams = rows
+        .filter((r) => r.league === league && r.division === div)
+        .sort((a, b) => b.wins - a.wins || a.losses - b.losses || b.runDiff - a.runDiff);
+      if (divTeams.length >= 1) divWinners.push(divTeams[0]);
+      if (divTeams.length >= 2) divRunners.push(divTeams[1]);
+    }
+
+    divWinners.sort((a, b) => b.wins - a.wins || a.losses - b.losses || b.runDiff - a.runDiff);
+    divRunners.sort((a, b) => b.wins - a.wins || a.losses - b.losses || b.runDiff - a.runDiff);
+
+    result[league] = [...divWinners, ...divRunners];
+  }
+
+  return result;
+}

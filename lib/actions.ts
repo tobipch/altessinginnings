@@ -15,7 +15,7 @@ import {
   rollBottomHalf,
   simulateCpuGame,
 } from "./game-logic";
-import { getStandings, topTeamsPerLeague } from "./standings";
+import { getStandings, playoffTeamsPerLeague } from "./standings";
 
 async function getMariners() {
   const t = await prisma.team.findUnique({
@@ -457,39 +457,40 @@ function aggregateStatDeltas(
 }
 
 /**
- * Create playoff bracket. Top 4 per league by record.
- * Round 1 = "divisional"  (1v4 and 2v3 per league)
+ * Create playoff bracket. Top 2 from each division per league (6 per league).
+ * Seeds 1-2 get a bye. Wildcard round: 3v6, 4v5.
+ * Then divisional: 1 vs lowest surviving, 2 vs other.
  */
 async function startPlayoffs(seasonId: number) {
   const standings = await getStandings(seasonId);
-  const { AL, NL } = topTeamsPerLeague(standings, 4);
+  const { AL, NL } = playoffTeamsPerLeague(standings);
 
   await prisma.season.update({
     where: { id: seasonId },
     data: { status: "playoffs" },
   });
 
-  // Round 1: 1v4 and 2v3 for each league
+  // Wildcard round: seed 3 vs 6, seed 4 vs 5
   for (const [league, teams] of [
     ["AL", AL],
     ["NL", NL],
   ] as const) {
-    if (teams.length < 4) continue;
+    if (teams.length < 6) continue;
     await prisma.playoffSeries.createMany({
       data: [
         {
           seasonId,
-          round: "divisional",
+          round: "wildcard",
           league,
-          teamAId: teams[0].teamId,
-          teamBId: teams[3].teamId,
+          teamAId: teams[2].teamId,
+          teamBId: teams[5].teamId,
         },
         {
           seasonId,
-          round: "divisional",
+          round: "wildcard",
           league,
-          teamAId: teams[1].teamId,
-          teamBId: teams[2].teamId,
+          teamAId: teams[3].teamId,
+          teamBId: teams[4].teamId,
         },
       ],
     });
@@ -587,7 +588,7 @@ async function maybeAdvancePlayoffRound(seasonId: number) {
   const mariners = await getMariners();
 
   // Ensure all series in the current stage are complete (catch-up simulate if not)
-  const stages = ["divisional", "championship", "worldseries"];
+  const stages = ["wildcard", "divisional", "championship", "worldseries"];
   for (const stage of stages) {
     const incomplete = await prisma.playoffSeries.findMany({
       where: { seasonId, round: stage, isComplete: false },
@@ -660,12 +661,61 @@ async function buildNextPlayoffStage(seasonId: number) {
     orderBy: { id: "asc" },
   });
 
+  const wildcard = allSeries.filter((s) => s.round === "wildcard");
   const divisional = allSeries.filter((s) => s.round === "divisional");
   const championship = allSeries.filter((s) => s.round === "championship");
   const worldseries = allSeries.filter((s) => s.round === "worldseries");
 
   const allDone = (list: typeof allSeries) =>
     list.length > 0 && list.every((s) => s.isComplete);
+
+  // Wildcard → Divisional: seed 1 vs lowest WC winner, seed 2 vs other
+  if (divisional.length === 0 && allDone(wildcard)) {
+    const standings = await getStandings(seasonId);
+    const { AL, NL } = playoffTeamsPerLeague(standings);
+
+    for (const [league, seeds] of [
+      ["AL", AL],
+      ["NL", NL],
+    ] as const) {
+      if (seeds.length < 6) continue;
+      const leagueWC = wildcard
+        .filter((s) => s.league === league)
+        .sort((a, b) => a.id - b.id);
+      if (leagueWC.length !== 2 || !leagueWC.every((s) => s.winnerId)) continue;
+
+      const seed1 = seeds[0].teamId;
+      const seed2 = seeds[1].teamId;
+      // WC winners: figure out which is higher/lower seed
+      const wcWinners = leagueWC.map((s) => s.winnerId!);
+      const wcSeeds = wcWinners.map((id) => {
+        const idx = seeds.findIndex((s) => s.teamId === id);
+        return { teamId: id, seed: idx >= 0 ? idx : 99 };
+      });
+      wcSeeds.sort((a, b) => a.seed - b.seed);
+
+      // Seed 1 vs lowest surviving seed, seed 2 vs highest surviving seed
+      await prisma.playoffSeries.createMany({
+        data: [
+          {
+            seasonId,
+            round: "divisional",
+            league,
+            teamAId: seed1,
+            teamBId: wcSeeds[1].teamId,
+          },
+          {
+            seasonId,
+            round: "divisional",
+            league,
+            teamAId: seed2,
+            teamBId: wcSeeds[0].teamId,
+          },
+        ],
+      });
+    }
+    return;
+  }
 
   // Championship round: AL LCS, NL LCS
   if (championship.length === 0 && allDone(divisional)) {

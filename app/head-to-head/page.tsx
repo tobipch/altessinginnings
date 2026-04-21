@@ -26,10 +26,13 @@ export default async function HeadToHeadPage() {
     return <p className="text-gray-300">Teams nicht geladen.</p>;
   }
 
-  // All completed user games across all seasons. Mariners are always home.
+  // All completed Mariners games across all seasons.
   const games = await prisma.game.findMany({
-    where: { isUserGame: true, isComplete: true },
-    include: { awayTeam: true },
+    where: {
+      isComplete: true,
+      OR: [{ homeTeamId: mariners.id }, { awayTeamId: mariners.id }],
+    },
+    include: { homeTeam: true, awayTeam: true },
     orderBy: { id: "asc" },
   });
 
@@ -45,7 +48,8 @@ export default async function HeadToHeadPage() {
   // Aggregate by opponent
   const map = new Map<number, H2HRow>();
   for (const g of games) {
-    const opp = g.awayTeam;
+    const marinersHome = g.homeTeamId === mariners.id;
+    const opp = marinersHome ? g.awayTeam : g.homeTeam;
     let row = map.get(opp.id);
     if (!row) {
       row = {
@@ -64,11 +68,12 @@ export default async function HeadToHeadPage() {
       map.set(opp.id, row);
     }
     row.gp++;
-    const won = g.homeScore > g.awayScore;
-    if (won) row.wins++;
+    const mScore = marinersHome ? g.homeScore : g.awayScore;
+    const oScore = marinersHome ? g.awayScore : g.homeScore;
+    if (mScore > oScore) row.wins++;
     else row.losses++;
-    row.runsFor += g.homeScore;
-    row.runsAgainst += g.awayScore;
+    row.runsFor += mScore;
+    row.runsAgainst += oScore;
   }
 
   const rows = Array.from(map.values());

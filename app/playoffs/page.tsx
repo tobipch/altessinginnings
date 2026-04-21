@@ -20,8 +20,8 @@ type SeriesWithTeams = {
 };
 
 type Bracket = {
-  al: { ds: SeriesWithTeams[]; lcs: SeriesWithTeams | null };
-  nl: { ds: SeriesWithTeams[]; lcs: SeriesWithTeams | null };
+  al: { wc: SeriesWithTeams[]; ds: SeriesWithTeams[]; lcs: SeriesWithTeams | null };
+  nl: { wc: SeriesWithTeams[]; ds: SeriesWithTeams[]; lcs: SeriesWithTeams | null };
   ws: SeriesWithTeams | null;
 };
 
@@ -55,10 +55,12 @@ export default async function PlayoffsPage() {
 
   const bracket: Bracket = {
     al: {
+      wc: series.filter((s) => s.round === "wildcard" && s.league === "AL"),
       ds: series.filter((s) => s.round === "divisional" && s.league === "AL"),
       lcs: series.find((s) => s.round === "championship" && s.league === "AL") ?? null,
     },
     nl: {
+      wc: series.filter((s) => s.round === "wildcard" && s.league === "NL"),
       ds: series.filter((s) => s.round === "divisional" && s.league === "NL"),
       lcs: series.find((s) => s.round === "championship" && s.league === "NL") ?? null,
     },
@@ -75,15 +77,26 @@ export default async function PlayoffsPage() {
       </div>
 
       {/* Desktop bracket */}
-      <div className="hidden md:grid grid-cols-5 gap-x-3 gap-y-4 items-center min-h-[500px]">
-        {/* Column 1: AL Division Series */}
-        <div className="flex flex-col justify-around h-full gap-12">
-          {bracket.al.ds.map((s) => (
-            <MatchupCard key={s.id} series={s} label="AL DS" />
+      <div className="hidden md:grid grid-cols-7 gap-x-2 gap-y-4 items-center min-h-[500px]">
+        {/* Column 1: AL Wild Card */}
+        <div className="flex flex-col justify-around h-full gap-8">
+          {bracket.al.wc.map((s) => (
+            <MatchupCard key={s.id} series={s} label="AL WC" />
           ))}
         </div>
 
-        {/* Column 2: AL LCS */}
+        {/* Column 2: AL Division Series */}
+        <div className="flex flex-col justify-around h-full gap-8">
+          {bracket.al.ds.length > 0 ? (
+            bracket.al.ds.map((s) => (
+              <MatchupCard key={s.id} series={s} label="AL DS" />
+            ))
+          ) : bracket.al.wc.length > 0 ? (
+            <PendingCard label="AL DS" />
+          ) : null}
+        </div>
+
+        {/* Column 3: AL LCS */}
         <div className="flex items-center justify-center h-full">
           {bracket.al.lcs ? (
             <MatchupCard series={bracket.al.lcs} label="ALCS" />
@@ -92,7 +105,7 @@ export default async function PlayoffsPage() {
           )}
         </div>
 
-        {/* Column 3: World Series */}
+        {/* Column 4: World Series */}
         <div className="flex items-center justify-center h-full">
           {bracket.ws ? (
             <MatchupCard series={bracket.ws} label="World Series" highlight />
@@ -101,7 +114,7 @@ export default async function PlayoffsPage() {
           )}
         </div>
 
-        {/* Column 4: NL LCS */}
+        {/* Column 5: NL LCS */}
         <div className="flex items-center justify-center h-full">
           {bracket.nl.lcs ? (
             <MatchupCard series={bracket.nl.lcs} label="NLCS" />
@@ -110,21 +123,34 @@ export default async function PlayoffsPage() {
           )}
         </div>
 
-        {/* Column 5: NL Division Series */}
-        <div className="flex flex-col justify-around h-full gap-12">
-          {bracket.nl.ds.map((s) => (
-            <MatchupCard key={s.id} series={s} label="NL DS" />
+        {/* Column 6: NL Division Series */}
+        <div className="flex flex-col justify-around h-full gap-8">
+          {bracket.nl.ds.length > 0 ? (
+            bracket.nl.ds.map((s) => (
+              <MatchupCard key={s.id} series={s} label="NL DS" />
+            ))
+          ) : bracket.nl.wc.length > 0 ? (
+            <PendingCard label="NL DS" />
+          ) : null}
+        </div>
+
+        {/* Column 7: NL Wild Card */}
+        <div className="flex flex-col justify-around h-full gap-8">
+          {bracket.nl.wc.map((s) => (
+            <MatchupCard key={s.id} series={s} label="NL WC" />
           ))}
         </div>
       </div>
 
       {/* Mobile layout: stacked */}
       <div className="md:hidden space-y-6">
-        <Section label="AL Division Series" list={bracket.al.ds} />
+        <Section label="AL Wild Card" list={bracket.al.wc} />
+        <Section label="AL Division Series" list={bracket.al.ds} pending={bracket.al.ds.length === 0 && bracket.al.wc.length > 0} />
         <Section label="ALCS" list={bracket.al.lcs ? [bracket.al.lcs] : []} pending={!bracket.al.lcs} />
         <Section label="World Series" list={bracket.ws ? [bracket.ws] : []} pending={!bracket.ws} highlight />
         <Section label="NLCS" list={bracket.nl.lcs ? [bracket.nl.lcs] : []} pending={!bracket.nl.lcs} />
-        <Section label="NL Division Series" list={bracket.nl.ds} />
+        <Section label="NL Division Series" list={bracket.nl.ds} pending={bracket.nl.ds.length === 0 && bracket.nl.wc.length > 0} />
+        <Section label="NL Wild Card" list={bracket.nl.wc} />
       </div>
     </div>
   );

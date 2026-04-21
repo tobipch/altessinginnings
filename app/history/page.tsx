@@ -16,8 +16,19 @@ export default async function HistoryPage() {
     );
   }
 
+  const mariners = await prisma.team.findUnique({
+    where: { abbreviation: MARINERS_ABBREVIATION },
+  });
+  if (!mariners) {
+    return <p className="text-gray-300">Teams nicht geladen.</p>;
+  }
+
   const games = await prisma.game.findMany({
-    where: { seasonId: season.id, isUserGame: true },
+    where: {
+      seasonId: season.id,
+      isComplete: true,
+      OR: [{ homeTeamId: mariners.id }, { awayTeamId: mariners.id }],
+    },
     include: {
       homeTeam: true,
       awayTeam: true,
@@ -37,19 +48,11 @@ export default async function HistoryPage() {
       ) : (
         <div className="space-y-3">
           {games.map((g) => {
-            const win = g.homeScore > g.awayScore;
-            const opponent =
-              g.homeTeam.abbreviation === MARINERS_ABBREVIATION
-                ? g.awayTeam
-                : g.homeTeam;
-            const marinersScore =
-              g.homeTeam.abbreviation === MARINERS_ABBREVIATION
-                ? g.homeScore
-                : g.awayScore;
-            const opponentScore =
-              g.homeTeam.abbreviation === MARINERS_ABBREVIATION
-                ? g.awayScore
-                : g.homeScore;
+            const marinersHome = g.homeTeam.abbreviation === MARINERS_ABBREVIATION;
+            const marinersScore = marinersHome ? g.homeScore : g.awayScore;
+            const opponentScore = marinersHome ? g.awayScore : g.homeScore;
+            const win = marinersScore > opponentScore;
+            const opponent = marinersHome ? g.awayTeam : g.homeTeam;
             return (
               <div
                 key={g.id}
@@ -133,6 +136,8 @@ export default async function HistoryPage() {
 
 function stageLabel(s: string) {
   switch (s) {
+    case "wildcard":
+      return "Wild Card";
     case "divisional":
       return "Division Series";
     case "championship":

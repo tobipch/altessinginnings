@@ -53,19 +53,24 @@ async function skipToPlayoffsAction(formData: FormData) {
 export default async function Home() {
   const season = await prisma.season.findFirst({
     orderBy: { id: "desc" },
-    include: {
-      games: {
-        where: { isUserGame: true },
-        orderBy: { id: "desc" },
-        include: { homeTeam: true, awayTeam: true },
-        take: 5,
-      },
-    },
   });
 
   const mariners = await prisma.team.findUnique({
     where: { abbreviation: MARINERS_ABBREVIATION },
   });
+
+  const recentGames = season && mariners
+    ? await prisma.game.findMany({
+        where: {
+          seasonId: season.id,
+          isComplete: true,
+          OR: [{ homeTeamId: mariners.id }, { awayTeamId: mariners.id }],
+        },
+        orderBy: { id: "desc" },
+        include: { homeTeam: true, awayTeam: true },
+        take: 5,
+      })
+    : [];
 
   // Team count check (did seed run?)
   const teamCount = await prisma.team.count();
@@ -113,13 +118,26 @@ npm run db:seed`}
       })
     : null;
 
-  const completedUserGames = await prisma.game.findMany({
-    where: { seasonId: season.id, isUserGame: true, isComplete: true },
-    orderBy: { id: "asc" },
-    select: { homeScore: true, awayScore: true },
+  const completedMarinersGames = mariners
+    ? await prisma.game.findMany({
+        where: {
+          seasonId: season.id,
+          isComplete: true,
+          OR: [{ homeTeamId: mariners.id }, { awayTeamId: mariners.id }],
+        },
+        orderBy: { id: "asc" },
+        select: { homeTeamId: true, homeScore: true, awayScore: true },
+      })
+    : [];
+  const marinersResults = completedMarinersGames.map((g) => {
+    const isHome = g.homeTeamId === mariners!.id;
+    return {
+      homeScore: isHome ? g.homeScore : g.awayScore,
+      awayScore: isHome ? g.awayScore : g.homeScore,
+    };
   });
   const { streak, lastTenWins, lastTenLosses } =
-    calcStreakAndLastTen(completedUserGames);
+    calcStreakAndLastTen(marinersResults);
 
   const marinersEliminated = await isMarinersEliminated(season.id);
   const currentUserGame = await prisma.game.findFirst({
@@ -146,7 +164,7 @@ npm run db:seed`}
               {marinersStats.wins + marinersStats.losses > 0 &&
                 ` (${(marinersStats.wins / (marinersStats.wins + marinersStats.losses)).toFixed(3).replace(/^0/, "")})`}
             </p>
-            {completedUserGames.length > 0 && (
+            {completedMarinersGames.length > 0 && (
               <p className="text-xs text-gray-400">
                 <span
                   className={
@@ -157,9 +175,9 @@ npm run db:seed`}
                 >
                   {streak}
                 </span>
-                {completedUserGames.length >= 2 && (
+                {completedMarinersGames.length >= 2 && (
                   <span className="ml-3">
-                    Letzte {Math.min(completedUserGames.length, 10)}:{" "}
+                    Letzte {Math.min(completedMarinersGames.length, 10)}:{" "}
                     <b>{lastTenWins}</b>–<b>{lastTenLosses}</b>
                   </span>
                 )}
@@ -260,12 +278,15 @@ npm run db:seed`}
         </div>
       </details>
 
-      {season.games.length > 0 && (
+      {recentGames.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-2">Letzte Mariners-Spiele</h2>
           <ul className="divide-y divide-gray-800 border border-gray-800 rounded-lg overflow-hidden">
-            {season.games.map((g) => {
-              const win = g.homeScore > g.awayScore;
+            {recentGames.map((g) => {
+              const marinersHome = g.homeTeamId === mariners!.id;
+              const win = marinersHome
+                ? g.homeScore > g.awayScore
+                : g.awayScore > g.homeScore;
               return (
                 <li
                   key={g.id}
@@ -329,7 +350,15 @@ async function isMarinersEliminated(seasonId: number): Promise<boolean> {
       OR: [{ teamAId: mariners.id }, { teamBId: mariners.id }],
     },
   });
-  if (series.length === 0) return true; // didn't qualify
+  if (series.length === 0) {
+    // Could be a bye (seeds 1-2 skip wildcard) — check if any wildcard
+    // series still exist; if so, Mariners are waiting for divisional.
+    const allSeries = await prisma.playoffSeries.findMany({ where: { seasonId } });
+    if (allSeries.length === 0) return true;
+    const hasIncomplete = allSeries.some((s) => !s.isComplete);
+    if (hasIncomplete) return false; // waiting for bracket to advance
+    return true; // all done and Mariners aren't in any — didn't qualify
+  }
   const latest = series[series.length - 1];
   if (latest.isComplete && latest.winnerId !== mariners.id) return true;
   return false;

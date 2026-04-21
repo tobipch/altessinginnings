@@ -50,6 +50,7 @@ export default async function ResultsPage() {
     ["worldseries", "World Series"],
     ["championship", "League Championship Series"],
     ["divisional", "Division Series"],
+    ["wildcard", "Wild Card"],
   ];
 
   return (
