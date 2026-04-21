@@ -15,7 +15,6 @@ import {
   ALTESSING_START_INNING,
   NORMAL_ROLL,
   REGULAR_INNINGS,
-  calcWinProbability,
   isAltessingBottomHalf,
 } from "@/lib/game-logic";
 
@@ -82,7 +81,15 @@ export default async function GamePage({
     state = "need_top";
     currentInning = 1;
   } else if (last.bottomScore === null) {
-    state = "need_bottom";
+    // Bottom not yet played — but if home team already leads in inning 9+,
+    // the bottom half is unnecessary (like real baseball).
+    const homeSoFar = innings.reduce((s, i) => s + (i.bottomScore ?? 0), 0);
+    const awaySoFar = innings.reduce((s, i) => s + i.topScore, 0);
+    if (last.inningNumber >= REGULAR_INNINGS && homeSoFar > awaySoFar) {
+      state = "done";
+    } else {
+      state = "need_bottom";
+    }
   } else {
     // bottom has been played — decide if game is over
     const homeScore = innings.reduce((s, i) => s + (i.bottomScore ?? 0), 0);
@@ -105,16 +112,6 @@ export default async function GamePage({
   const altessingPreview =
     state === "need_bottom" &&
     isAltessingBottomHalf(last!.inningNumber, opponentRunning, userRunning);
-
-  // How many full innings (both halves) are complete?
-  const fullInnings = innings.filter((i) => i.bottomScore !== null).length;
-  const isTopDone = state === "need_bottom";
-  const winProb = calcWinProbability(
-    userRunning,
-    opponentRunning,
-    fullInnings,
-    isTopDone
-  );
 
   const displayInnings = Math.max(REGULAR_INNINGS, innings.length);
 
@@ -169,7 +166,6 @@ export default async function GamePage({
             altessingPreview={altessingPreview}
             opponentRunning={opponentRunning}
             userRunning={userRunning}
-            winProb={winProb}
           />
           {innings.length > 0 && (
             <EditPanel
@@ -289,6 +285,8 @@ function EditPanel(props: {
 
 function stageLabel(s: string) {
   switch (s) {
+    case "wildcard":
+      return "Wild Card";
     case "divisional":
       return "Division Series";
     case "championship":
@@ -389,7 +387,13 @@ function Linescore(props: {
                     altessing ? "altessing" : ""
                   }`}
                 >
-                  {inn && inn.bottomScore !== null ? inn.bottomScore : ""}
+                  {inn
+                    ? inn.bottomScore !== null
+                      ? inn.bottomScore
+                      : currentInning === null
+                      ? "x"
+                      : ""
+                    : ""}
                 </td>
               );
             })}
@@ -401,30 +405,6 @@ function Linescore(props: {
   );
 }
 
-function WinProbabilityBar({ winProb, altessingActive }: { winProb: number; altessingActive: boolean }) {
-  const pct = Math.round(winProb * 100);
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs text-gray-400">
-        <span>Mariners Win-Probability</span>
-        <span className="font-mono">{pct}%</span>
-      </div>
-      <div className="relative h-3 rounded-full bg-gray-700 overflow-hidden">
-        <div
-          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${
-            altessingActive
-              ? "bg-gradient-to-r from-teal-400 to-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-              : pct >= 50
-              ? "bg-teal-400"
-              : "bg-teal-400/60"
-          }`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function ControlPanel(props: {
   game: { id: number };
   state: "need_top" | "need_bottom" | "done";
@@ -432,7 +412,6 @@ function ControlPanel(props: {
   altessingPreview: boolean;
   opponentRunning: number;
   userRunning: number;
-  winProb: number;
 }) {
   const {
     game,
@@ -441,7 +420,6 @@ function ControlPanel(props: {
     altessingPreview,
     opponentRunning,
     userRunning,
-    winProb,
   } = props;
 
   const diff = userRunning - opponentRunning;
@@ -482,8 +460,6 @@ function ControlPanel(props: {
           </div>
         </div>
       </div>
-
-      <WinProbabilityBar winProb={winProb} altessingActive={altessingPreview} />
 
       {state === "need_top" && (
         <form
